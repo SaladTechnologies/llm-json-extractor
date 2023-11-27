@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+  tgi:
+    image: ghcr.io/huggingface/text-generation-inference:1.1.1
+    ports:
+      - 3000:3000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ gpu ]
+              count: all
+    volumes:
+      - ./data:/data
+    environment:
+      MODEL_ID: TheBloke/zephyr-7B-beta-AWQ
+      REVISION: ad7867b7a09d5504c86cc015d2d3a73904d488dd
+      QUANTIZE: awq
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
