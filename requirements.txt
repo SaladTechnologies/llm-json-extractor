@@ -1,1 +1,6 @@
 qdrant-client
+Jinja2
+ipywidgets
+unstructured
+beautifulsoup4
+lxml
