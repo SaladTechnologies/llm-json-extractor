@@ -19,6 +19,8 @@ services:
       QUANTIZE: awq
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      MAX_INPUT_LENGTH: 2048
+      MAX_TOTAL_TOKENS: 4096
   tei:
     image: ghcr.io/huggingface/text-embeddings-inference:0.6
     ports:
