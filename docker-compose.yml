@@ -16,7 +16,7 @@ services:
       - ./data:/data
     environment:
       MODEL_ID: TheBloke/zephyr-7B-beta-AWQ
-      # QUANTIZE: awq
+      QUANTIZE: awq
       HOSTNAME: 0.0.0.0
       PORT: 3000
   tei:
