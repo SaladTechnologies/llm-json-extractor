@@ -2,7 +2,7 @@ version: '3'
 
 services:
   tgi:
-    image: ghcr.io/huggingface/text-generation-inference:1.1.1
+    image: ghcr.io/huggingface/text-generation-inference:1.2.0
     ports:
       - 3000:3000
     deploy:
@@ -16,7 +16,30 @@ services:
       - ./data:/data
     environment:
       MODEL_ID: TheBloke/zephyr-7B-beta-AWQ
-      REVISION: ad7867b7a09d5504c86cc015d2d3a73904d488dd
-      QUANTIZE: awq
+      # QUANTIZE: awq
       HOSTNAME: 0.0.0.0
       PORT: 3000
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:0.6
+    ports:
+      - 3001:3001
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ gpu ]
+              count: all
+    volumes:
+      - ./data:/data
+    environment:
+      MODEL_ID: BAAI/bge-large-en-v1.5
+      HOSTNAME: 0.0.0.0
+      PORT: 3001
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - 6333:6333
+      - 6334:6334
+    volumes:
+      - ./qdrant:/qdrant/storage:z
