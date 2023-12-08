@@ -4,3 +4,4 @@ ipywidgets
 unstructured
 beautifulsoup4
 lxml
+aiohttp

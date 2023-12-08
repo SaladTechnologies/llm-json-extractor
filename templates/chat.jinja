@@ -5,7 +5,8 @@
 {{ '<|system|>\n' + message['content'] + eos_token }}
 {% elif message['role'] == 'assistant' %}
 {{ '<|assistant|>\n'  + message['content'] + eos_token }}
-{% endif %}\n{% if loop.last and add_generation_prompt %}
+{% endif %}
+{% if loop.last and add_generation_prompt %}
 {{ '<|assistant|>' }}
 {% endif %}
 {% endfor %}
