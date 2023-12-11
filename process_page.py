@@ -2,6 +2,7 @@ import email
 from email import policy
 import nltk
 from nltk.tokenize import word_tokenize
+from nltk.tokenize.treebank import TreebankWordDetokenizer
 from typing import Union, IO, Any, List, Tuple
 from bs4 import BeautifulSoup
 import requests
@@ -20,8 +21,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 import json
 
 nltk.download("punkt")
-env = Environment(loader=FileSystemLoader("templates"), autoescape=select_autoescape())
+detokenizer = TreebankWordDetokenizer()
 
+env = Environment(loader=FileSystemLoader("templates"), autoescape=select_autoescape())
 chat_template = env.get_template("chat.jinja")
 
 embedding_server = os.getenv("TEI_SERVER", "http://localhost:3001")
@@ -47,22 +49,29 @@ def extract_html_from_mhtml(file_path: Union[str, IO[Any]]) -> str:
             return part.get_content()
 
 
-def chunk_text(text: str, max_tokens: int = 512) -> List[str]:
+def chunk_text(text: str, max_tokens: int = 512, stride: int = None) -> List[str]:
+    """Chunk a text into smaller pieces.
+
+    Args:
+        text (str): The text to chunk.
+        max_tokens (int, optional): Max tokens per chunk. Defaults to 512.
+        stride (int, optional): How many tokens each chunk should overlap with adjacent chunks. Defaults to max_tokens // 6.
+
+    Returns:
+        List[str]: A list of chunks.
+    """
+
+    if stride is None:
+        stride = max_tokens // 6
     # Tokenize the text
     tokens = word_tokenize(text)
 
-    # Chunk the tokens
+    # Chunk the tokens, with each chunk having a maximum of `max_tokens`
+    # tokens, and overlapping front and back by `stride` tokens
     chunks = []
-    current_chunk = []
-    for token in tokens:
-        current_chunk.append(token)
-        if len(current_chunk) >= max_tokens:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-
-    # Add the last chunk if it's not empty
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
+    for i in range(0, len(tokens), max_tokens - stride):
+        chunk = tokens[i : i + max_tokens]
+        chunks.append(detokenizer.detokenize(chunk))
 
     return chunks
 
@@ -79,7 +88,11 @@ def chunk_html(html: str) -> List[str]:
 
     text = soup.get_text(separator="\n", strip=True)
 
-    return json_content + [str(tag) for tag in meta] + chunk_text(text, max_tokens=256)
+    return (
+        json_content
+        + [str(tag) for tag in meta]
+        + chunk_text(text, max_tokens=256, stride=32)
+    )
 
 
 async def get_embedding(session: aiohttp.ClientSession, text: str) -> List[List[float]]:
@@ -141,7 +154,7 @@ def search_page(query: str, collection_name: str, page_id: str, limit: int = 5):
     return search_result
 
 
-def get_extraction_prompt(prompt: str, context: str):
+def get_extraction_prompt(prompt: str, context: str) -> str:
     chat = [
         {
             "role": "system",
@@ -188,7 +201,20 @@ def ask_question(
     max_tokens: int = 256,
     search=None,
     collection_name="harrods",
-):
+) -> str:
+    """Ask a question about a page.
+
+    Args:
+        question (str): The question to ask.
+        page_id (str): The page ID to ask the question about.
+        limit (int, optional): How many search results to use for context. Defaults to 5.
+        max_tokens (int, optional): The maximum number of tokens that the answer should contain. Defaults to 256.
+        search (_type_, optional): Optionally, use a separate search query from your LLM question. Defaults to `question`.
+        collection_name (str, optional): The name of the collection in qdrant. Defaults to "harrods".
+
+    Returns:
+        str: The answer to the question.
+    """
     if search is None:
         search = question
     search_results = search_page(search, collection_name, page_id, limit=limit)
@@ -197,8 +223,8 @@ def ask_question(
     searched_content = [
         search_result.payload["content"] for search_result in search_results
     ]
-    answer = "\n".join(searched_content)
-    prompt = get_extraction_prompt(question, answer)
+    context = "\n-----------------\n".join(searched_content)
+    prompt = get_extraction_prompt(question, context)
     answer = generate(
         prompt,
         generate_params={
@@ -210,10 +236,13 @@ def ask_question(
     )
     answer = answer.strip()
     try:
+        # Hopefully the answer is valid JSON as requested
         answer = json.loads(answer)
         if len(answer.keys()) == 1:
+            # And hopefully it only has one key
             return list(answer.values())[0]
         elif len(answer.keys()) > 1:
+            # If it has more than one key, we need to normalize it back into prose
             prompt = get_normalize_prompt(json.dumps(answer))
             answer = generate(
                 prompt,
@@ -225,6 +254,7 @@ def ask_question(
             )
             return answer.strip()
     except Exception as e:
+        # If it's not valid JSON, we need to normalize it back into prose
         prompt = get_normalize_prompt(answer)
         answer = generate(
             prompt,
@@ -242,7 +272,6 @@ def extract_from_page(page_id: str):
     name = ask_question(
         "What is the name of the product?",
         page_id,
-        # search="product name or model",
         max_tokens=64,
     )
     price = ask_question(f"What is the price of {name}", page_id, max_tokens=16)
@@ -260,7 +289,6 @@ def extract_from_page(page_id: str):
     manufacturer = ask_question(
         f"Who is the manufacturer (or manufacturers) of {name}? Answer as a string, even if there's multiple",
         page_id,
-        # search="manufacturer",
         max_tokens=64,
     )
 
